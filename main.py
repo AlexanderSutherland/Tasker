@@ -51,6 +51,7 @@ class TaskManager(QMainWindow):
 
         # Timer State        
         self.timer = QTimer()
+        self.timer_running = False
 
         self.timer.timeout.connect(self.update_timer)
 
@@ -65,6 +66,78 @@ class TaskManager(QMainWindow):
 
         self.setup_ui()
         self.load_tasks()
+
+    def start_timer(self):
+
+        if self.selected_task is None:
+            return
+
+        if self.timer_running:
+            return
+
+        self.timer_start = datetime.now()
+
+        self.elapsed_seconds = 0
+
+        self.timer_running = True
+
+        self.timer_label.setText(
+            "🟢 00:00:00"
+        )
+
+        self.timer.start(1000)
+
+    def update_timer(self):
+
+        self.elapsed_seconds += 1
+
+        hours = self.elapsed_seconds // 3600
+
+        minutes = (
+            self.elapsed_seconds % 3600
+        ) // 60
+
+        seconds = (
+            self.elapsed_seconds % 60
+        )
+
+
+        self.timer_label.setText(
+            f"🟢 {hours:02}:{minutes:02}:{seconds:02}"
+        )
+
+    def stop_timer(self):
+
+        if not self.timer_running:
+            return
+
+
+        self.timer.stop()
+
+        end = datetime.now()
+
+        duration = (
+            end - self.timer_start
+        ).total_seconds() / 3600
+
+
+        self.database.add_time_entry(
+            self.selected_task.id,
+            self.timer_start.isoformat(),
+            end.isoformat(),
+            duration
+        )
+
+
+        self.timer_running = False
+
+        self.timer_label.setText(
+            "⚪ 00:00:00"
+        )
+
+        self.timer_start = None
+
+        self.update_dashboard()
 
     def load_tasks(self):
         self.tasks = self.database.get_tasks()
@@ -85,6 +158,24 @@ class TaskManager(QMainWindow):
                 self.tasks.append(task)
 
                 self.refresh_table()
+
+    def complete_task(self):
+
+        if self.selected_task is None:
+            return
+
+
+        self.selected_task.status = "Complete"
+
+
+        self.database.update_task(
+            self.selected_task
+        )
+
+
+        self.refresh_table()
+
+        self.update_dashboard()
 
     def setup_ui(self):
 
@@ -261,10 +352,18 @@ class TaskManager(QMainWindow):
         )
 
 
+        complete = QPushButton("✓ Complete")
+        
+        complete.clicked.connect(
+            self.complete_task
+        )
         detail_layout.addWidget(save)
 
         detail_layout.addWidget(delete)
         
+        detail_layout.addWidget(complete)
+        
+
         
         self.start_button = QPushButton(
             "▶ Start Timer"
@@ -326,7 +425,7 @@ class TaskManager(QMainWindow):
         )
 
 
-        self.dashboard = Dashboard()
+        self.dashboard = Dashboard(refresh_callback=self.update_dashboard)
 
 
         self.tabs.addTab(
@@ -349,8 +448,16 @@ class TaskManager(QMainWindow):
         self.apply_theme()
 
     def update_dashboard(self):
+        
+        period = self.dashboard.period
 
-        project_times = {}
+        project_times = (
+            self.database.get_project_hours()
+        )
+
+        total_hours = (
+            self.database.get_total_hours()
+        )
 
         # placeholder until we query database
         for task in self.tasks:
@@ -363,7 +470,8 @@ class TaskManager(QMainWindow):
 
         self.dashboard.update_dashboard(
             self.tasks,
-            project_times
+            project_times,
+            total_hours
         )
 
     def update_timer(self):
@@ -660,10 +768,16 @@ class TaskManager(QMainWindow):
 
             for col, value in enumerate(values):
 
+                item = QTableWidgetItem(str(value))
+
+                # Customize status display
+                if col == 4 and task.status == "Complete":
+                    item.setText("✓ Complete")
+
                 self.table.setItem(
                     row,
                     col,
-                    QTableWidgetItem(str(value))
+                    item
                 )
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import sqlite3
 
 from models import Task
 from datetime import date
+from datetime import datetime, timedelta
 
 
 DATABASE = "taskpilot.db"
@@ -16,6 +17,7 @@ class Database:
         )
 
         self.create_table()
+
 
     def add_time_entry(
             self,
@@ -195,6 +197,121 @@ class Database:
         )
 
         self.connection.commit()
+
+    # def get_project_hours(self):
+
+    #     cursor = self.connection.cursor()
+
+    #     cursor.execute(
+    #         """
+    #         SELECT
+    #             tasks.project,
+    #             SUM(time_entries.duration)
+
+    #         FROM time_entries
+
+    #         JOIN tasks
+    #         ON time_entries.task_id = tasks.id
+
+    #         GROUP BY tasks.project
+
+    #         ORDER BY SUM(time_entries.duration) DESC
+
+    #         """
+    #     )
+
+
+    #     rows = cursor.fetchall()
+
+
+    #     project_hours = {}
+
+    #     for project, hours in rows:
+
+    #         project_hours[project] = hours or 0
+
+
+    #     return project_hours
+
+    def get_total_hours(self):
+
+        cursor = self.connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT SUM(duration)
+            FROM time_entries
+            """
+        )
+
+        result = cursor.fetchone()[0]
+
+        return result or 0
+
+    def get_project_hours(self, period="week"):
+
+        cursor = self.connection.cursor()
+
+
+        if period == "today":
+
+            start = datetime.now().replace(
+                hour=0,
+                minute=0,
+                second=0
+            )
+
+
+        elif period == "week":
+
+            today = datetime.now()
+
+            start = today - timedelta(
+                days=today.weekday()
+            )
+
+
+        elif period == "month":
+
+            today = datetime.now()
+
+            start = today.replace(
+                day=1
+            )
+
+
+        else:
+
+            start = datetime.min
+
+
+
+        cursor.execute(
+            """
+            SELECT
+                tasks.project,
+                SUM(time_entries.duration)
+
+            FROM time_entries
+
+            JOIN tasks
+            ON time_entries.task_id = tasks.id
+
+            WHERE time_entries.start_time >= ?
+
+            GROUP BY tasks.project
+
+            """,
+            (
+                start.isoformat(),
+            )
+        )
+
+
+        results = cursor.fetchall()
+
+
+        return dict(results)
 
     def update_task(self, task):
 
