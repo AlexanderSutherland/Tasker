@@ -51,6 +51,7 @@ class TaskManager(QMainWindow):
         self.database = Database()
         self.tasks = []
         self.filtered_tasks = []
+        self.base_filtered_tasks = []
         self.completed_tasks = []
         self.current_filter = "all"
         self.selected_task = None
@@ -409,8 +410,6 @@ class TaskManager(QMainWindow):
 
         self.update_dashboard()
         
-        
-        
     def reopen_task(self):
 
         row = self.completed_table.currentRow()
@@ -526,9 +525,32 @@ class TaskManager(QMainWindow):
                 t for t in self.tasks
                 if t.status == "Complete"
             ]
+        self.base_filtered_tasks = self.filtered_tasks.copy()
 
+        self.apply_search()
         self.refresh_table()
 
+    def apply_search(self):
+
+        text = self.search.text().lower().strip()
+        if not text:
+            self.filtered_tasks = (
+                self.base_filtered_tasks.copy()
+            )
+
+        else:
+            self.filtered_tasks = [
+                task
+                for task in self.base_filtered_tasks
+                if (
+                    text in task.title.lower()
+                    or text in task.project.lower()
+                    or text in task.notes.lower()
+                )
+            ]
+
+
+        self.refresh_table()
 
     def show_details(self, visible):
 
@@ -585,6 +607,9 @@ class TaskManager(QMainWindow):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("🔍 Search tasks...")
+        self.search.textChanged.connect(
+            self.apply_search
+        )
 
         new_button = QPushButton("+ New Task")
         
