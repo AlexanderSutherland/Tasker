@@ -23,8 +23,13 @@ class Task:
     status: str = "Open"
 
     notes: str = ""
+    
+    completed_date: date | None = None
 
     def priority_score(self):
+
+        if self.status == "Complete":
+            return -1
 
         today = date.today()
 
@@ -32,8 +37,6 @@ class Task:
             self.due_date - today
         ).days
 
-
-        # Urgency
         if days_remaining < 0:
             urgency = 10
         elif days_remaining == 0:
@@ -42,7 +45,6 @@ class Task:
             urgency = 5
         else:
             urgency = 2
-
 
         score = (
             urgency

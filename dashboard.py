@@ -121,57 +121,15 @@ class Dashboard(QWidget):
 
         layout.addStretch()
 
-    # def update_dashboard(
-    #     self,
-    #     tasks,
-    #     project_times
-    # ):
 
-    #     open_tasks = len(
-    #         [
-    #             t for t in tasks
-    #             if t.status == "Open"
-    #         ]
-    #     )
-
-
-    #     completed = len(
-    #         [
-    #             t for t in tasks
-    #             if t.status == "Complete"
-    #         ]
-    #     )
-
-
-    #     self.summary.setText(
-    #         f"""
-    #         Open Tasks: {open_tasks}
-
-    #         Completed:
-    #         {completed}
-    #         """
-    #     )
-
-
-    #     text = ""
-
-    #     for project, hours in project_times.items():
-
-    #         text += (
-    #             f"{project}: "
-    #             f"{hours:.2f} hrs\n"
-    #         )
-
-
-    #     self.project_hours.setText(
-    #         text
-    #     )
     def update_dashboard(
         self,
         tasks,
         project_times,
         total_hours
     ):
+        print("Updating dashboard...")
+        print("Period:", self.period)
 
         open_tasks = len(
             [
@@ -220,6 +178,8 @@ class Dashboard(QWidget):
         )
 
     def change_period(self, period):
+
+        print("Period selected:", period)
 
         self.period = period
 

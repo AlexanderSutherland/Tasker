@@ -19,8 +19,11 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QSpinBox,
     QMessageBox,
-    QTabWidget
+    QTabWidget,
+    QHeaderView
 )
+
+from PySide6.QtCore import QDate
 
 from dashboard import Dashboard
 
@@ -47,7 +50,12 @@ class TaskManager(QMainWindow):
         
         self.database = Database()
         self.tasks = []
+        self.filtered_tasks = []
+        self.completed_tasks = []
+        self.current_filter = "all"
         self.selected_task = None
+        self.selected_source = None
+        
 
         # Timer State        
         self.timer = QTimer()
@@ -66,6 +74,8 @@ class TaskManager(QMainWindow):
 
         self.setup_ui()
         self.load_tasks()
+        self.show_details(False)
+        self.update_button_visibility()
 
     def start_timer(self):
 
@@ -140,9 +150,87 @@ class TaskManager(QMainWindow):
         self.update_dashboard()
 
     def load_tasks(self):
-        self.tasks = self.database.get_tasks()
+
+        all_tasks = self.database.get_tasks()
+
+        self.tasks = [
+            t for t in all_tasks
+            if t.status != "Complete"
+        ]
+
+        self.completed_tasks = [
+            t for t in all_tasks
+            if t.status == "Complete"
+        ]
+
+
+        # Important for filters
+        self.filtered_tasks = self.tasks.copy()
+
+
         self.refresh_table()
+
+        self.refresh_completed_table()
+
         self.update_dashboard()
+
+    def load_mock_tasks(self):
+
+        self.tasks = [
+
+            Task(
+                title="Review ClearCase changes",
+                project="Radar",
+                due_date=date.today(),
+                impact=5,
+                blocking=True
+            ),
+
+            Task(
+                title="Fix build failure",
+                project="ARES",
+                due_date=date.today(),
+                impact=5
+            ),
+
+            Task(
+                title="Update requirements document",
+                project="Systems",
+                due_date=date.today()+timedelta(days=3),
+                impact=3
+            ),
+
+            Task(
+                title="Write documentation",
+                project="Docs",
+                due_date=date.today()+timedelta(days=10),
+                impact=1
+            ),
+        ]
+
+
+        self.tasks = sort_tasks(self.tasks)
+
+
+        self.table.setRowCount(len(self.tasks))
+
+        for row, task in enumerate(self.tasks):
+            values = [
+                task.priority_score(),
+                task.title,
+                task.due_date,
+                task.project,
+                task.status
+            ]
+
+
+            for col,value in enumerate(values):
+
+                self.table.setItem(
+                    row,
+                    col,
+                    QTableWidgetItem(str(value))
+                )
 
     def new_task(self):
 
@@ -153,29 +241,332 @@ class TaskManager(QMainWindow):
             task = dialog.task
 
             if task:
+
                 self.database.add_task(task)
 
                 self.tasks.append(task)
 
+                self.filtered_tasks.append(task)
+
                 self.refresh_table()
 
-    def complete_task(self):
+                self.update_dashboard()
+    
+    def select_task(self, row, column, source):
+
+        self.selected_source = source
+
+        if source == "active":
+            task = self.filtered_tasks[row]
+        else:
+            task = self.completed_tasks[row]
+
+        self.load_task_into_editor(task)
+        self.load_task_into_editor(task)
+        self.show_details(True)
+
+        self.update_button_visibility()
+
+    def save_editor_to_task(self, task):
+
+        task.title = self.title.text()
+
+        task.project = self.project.text()
+
+        task.due_date = (
+            self.due_date.date().toPython()
+        )
+
+        task.impact = self.impact.value()
+
+        task.effort = self.effort.value()
+
+        task.blocking = (
+            self.blocking.isChecked()
+        )
+
+        task.waiting = (
+            self.waiting.isChecked()
+        )
+
+        task.notes = (
+            self.notes.toPlainText()
+        )
+
+    def save_task(self):
 
         if self.selected_task is None:
             return
 
+        self.save_editor_to_task(self.selected_task)
 
-        self.selected_task.status = "Complete"
+        self.database.update_task(self.selected_task)
+
+        self.refresh_table()
+        self.update_dashboard()
+
+    def complete_task(self):
+
+        if self.selected_task is None:
+            print("No selected task")
+            return
 
 
-        self.database.update_task(
-            self.selected_task
+        task = self.selected_task
+
+        print("Completing:", task.title)
+
+
+        task.status = "Complete"
+        task.completed_date = date.today()
+
+
+        # Save database first
+        self.database.update_task(task)
+
+
+        # Remove from active views
+        self.tasks = [
+            t for t in self.tasks
+            if t.id != task.id
+        ]
+
+        self.filtered_tasks = [
+            t for t in self.filtered_tasks
+            if t.id != task.id
+        ]
+
+
+        # Add to completed
+        self.completed_tasks.append(task)
+
+
+        # Clear selection
+        self.selected_task = None
+
+
+        # Refresh UI
+        self.refresh_table()
+        self.refresh_completed_table()
+
+        self.update_dashboard()
+
+    def delete_task(self):
+
+        if self.selected_task is None:
+            print("No selected task")
+            return
+
+
+        task = self.selected_task
+
+
+        reply = QMessageBox.question(
+            self,
+            "Delete Task",
+            f"Are you sure you want to delete:\n\n{task.title}?",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
         )
+
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+
+        print("Deleting:", task.title)
+
+
+        self.database.delete_task(task.id)
+
+
+        self.tasks = [
+            t for t in self.tasks
+            if t.id != task.id
+        ]
+
+        self.filtered_tasks = [
+            t for t in self.filtered_tasks
+            if t.id != task.id
+        ]
+
+        self.completed_tasks = [
+            t for t in self.completed_tasks
+            if t.id != task.id
+        ]
+
+
+
+        self.selected_task = None
+        self.selected_source = None
+        self.clear_editor()
+        self.show_details(False)
+        self.update_button_visibility()
+
+        self.refresh_table()
+
+        self.refresh_completed_table()
+
+        self.update_dashboard()
+        
+        
+        
+    def reopen_task(self):
+
+        row = self.completed_table.currentRow()
+
+        if row < 0:
+            return
+
+
+        task = self.completed_tasks[row]
+
+
+        task.status = "Open"
+
+        task.completed_date = None
+
+
+        self.database.update_task(task)
+
+
+        self.completed_tasks.remove(task)
+
+        self.tasks.append(task)
+
+        self.filtered_tasks.append(task)
 
 
         self.refresh_table()
 
+        self.refresh_completed_table()
+
         self.update_dashboard()
+
+    def load_task_into_editor(self, task):
+
+        self.selected_task = task
+
+        self.title.setText(task.title)
+
+        self.project.setText(task.project)
+
+        self.due_date.setDate(
+            QDate(
+                task.due_date.year,
+                task.due_date.month,
+                task.due_date.day
+            )
+        )
+
+        self.impact.setValue(task.impact)
+
+        self.effort.setValue(task.effort)
+
+        self.blocking.setChecked(task.blocking)
+
+        self.waiting.setChecked(task.waiting)
+
+        self.notes.setPlainText(task.notes)
+
+    def clear_editor(self):
+
+        self.title.clear()
+
+        self.project.clear()
+
+        self.due_date.setDate(
+            QDate.currentDate()
+        )
+
+        self.impact.setValue(3)
+
+        self.effort.setValue(3)
+
+        self.blocking.setChecked(False)
+
+        self.waiting.setChecked(False)
+
+        self.notes.clear()
+
+    def apply_filter(self, filter_name):
+
+        self.current_filter = filter_name
+
+        today = date.today()
+
+        if filter_name == "all":
+
+            self.filtered_tasks = self.tasks.copy()
+
+        elif filter_name == "today":
+
+            self.filtered_tasks = [
+                t for t in self.tasks
+                if t.due_date == today
+            ]
+
+        elif filter_name == "week":
+
+            self.filtered_tasks = [
+                t for t in self.tasks
+                if 0 <= (t.due_date - today).days <= 7
+            ]
+
+        elif filter_name == "waiting":
+
+            self.filtered_tasks = [
+                t for t in self.tasks
+                if t.waiting
+            ]
+
+        elif filter_name == "completed":
+
+            self.filtered_tasks = [
+                t for t in self.tasks
+                if t.status == "Complete"
+            ]
+
+        self.refresh_table()
+
+
+    def show_details(self, visible):
+
+        self.details_placeholder.setVisible(
+            not visible
+        )
+
+        self.title.setVisible(
+            visible
+        )
+
+        self.project.setVisible(
+            visible
+        )
+
+        self.due_date.setVisible(
+            visible
+        )
+
+        self.impact.setVisible(
+            visible
+        )
+
+        self.effort.setVisible(
+            visible
+        )
+
+        self.blocking.setVisible(
+            visible
+        )
+
+        self.waiting.setVisible(
+            visible
+        )
+
+        self.notes.setVisible(
+            visible
+        )
 
     def setup_ui(self):
 
@@ -183,6 +574,7 @@ class TaskManager(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QVBoxLayout(central)
+
 
 
         # -------------------------
@@ -228,20 +620,39 @@ class TaskManager(QMainWindow):
             "Completed",
         ]
 
-        for item in filters:
-            button = QPushButton(item)
+
+
+        filter_map = {
+            "Today": "today",
+            "This Week": "week",
+            "Overdue": "overdue",
+            "Waiting": "waiting",
+            "Backlog": "backlog",
+            "Completed": "completed",
+        }
+
+        for text, filter_name in filter_map.items():
+            button = QPushButton(text)
+            button.clicked.connect(lambda checked=False, f=filter_name: self.apply_filter(f))
             nav_layout.addWidget(button)
 
         nav_layout.addStretch()
 
         splitter.addWidget(nav)
 
-
         # Center task table
 
         self.table = QTableWidget()
 
         self.table.setColumnCount(5)
+        
+        header = self.table.horizontalHeader()
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)           # Title
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Due Date
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)           # Project
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Status
 
         self.table.setHorizontalHeaderLabels(
             [
@@ -260,8 +671,81 @@ class TaskManager(QMainWindow):
         splitter.addWidget(self.table)
         
         self.table.cellClicked.connect(
-                self.select_task
-            )
+            lambda row, col: self.select_task(row, col, "active")
+        )
+        
+        # Center task area
+
+        task_area = QWidget()
+
+        task_layout = QVBoxLayout(task_area)
+
+
+        task_layout.addWidget(
+            QLabel("Active Tasks")
+        )
+
+        task_layout.addWidget(
+            self.table
+        )
+
+
+        task_layout.addWidget(
+            QLabel("Completed Tasks")
+        )
+
+
+        self.completed_table = QTableWidget()
+
+        self.completed_table.setColumnCount(3)
+
+        self.completed_table.setHorizontalHeaderLabels(
+            [
+                "Title",
+                "Project",
+                "Completed Date"
+            ]
+        )
+        header = self.completed_table.horizontalHeader()
+
+        header.setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.Stretch
+        )  # Title
+
+        header.setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch
+        )  # Project
+
+        header.setSectionResizeMode(
+            2,
+            QHeaderView.ResizeMode.ResizeToContents
+        )  # Completed Date
+        
+        
+        self.completed_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        
+        self.completed_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+
+        task_layout.addWidget(
+            self.completed_table
+        )
+        
+        self.completed_table.cellClicked.connect(
+            lambda row, col: self.select_task(row, col, "completed")
+        )
+
+
+        splitter.addWidget(
+            task_area
+        )
+        
+
 
 
         # Right detail panel
@@ -341,29 +825,51 @@ class TaskManager(QMainWindow):
             self.notes
         )
 
-        save = QPushButton("Save")
+        self.save_button = QPushButton("Save")
 
-        save.clicked.connect(self.save_task)
+        self.save_button.clicked.connect(self.save_task)
 
-        delete = QPushButton("Delete")
+        self.delete_button = QPushButton("Delete")
 
-        delete.clicked.connect(
+        self.delete_button.clicked.connect(
             self.delete_task
         )
 
 
-        complete = QPushButton("✓ Complete")
+        self.complete_button = QPushButton("✓ Complete")
         
-        complete.clicked.connect(
+        self.complete_button.clicked.connect(
             self.complete_task
         )
-        detail_layout.addWidget(save)
-
-        detail_layout.addWidget(delete)
         
-        detail_layout.addWidget(complete)
-        
+        self.reopen_button = QPushButton(
+            "↩ Reopen"
+        )
 
+        self.reopen_button.clicked.connect(
+            self.reopen_task
+        )
+        
+        detail_layout.addWidget(self.save_button)
+
+        detail_layout.addWidget(self.delete_button)
+        
+        detail_layout.addWidget(self.complete_button)
+        
+        detail_layout.addWidget(self.reopen_button)
+        
+        self.details_placeholder = QLabel(
+            "Select a task to view details"
+        )
+
+        self.details_placeholder.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        
+        detail_layout.addWidget(
+            self.details_placeholder
+        )
+                
         
         self.start_button = QPushButton(
             "▶ Start Timer"
@@ -447,194 +953,53 @@ class TaskManager(QMainWindow):
 
         self.apply_theme()
 
+    def update_button_visibility(self):
+
+        if self.selected_source == "active":
+
+            self.save_button.show()
+
+            self.delete_button.show()
+
+            self.complete_button.show()
+
+            self.reopen_button.hide()
+
+
+        elif self.selected_source == "completed":
+
+            self.save_button.hide()
+
+            self.delete_button.show()
+
+            self.complete_button.hide()
+
+            self.reopen_button.show()
+
+
+        else:
+
+            self.save_button.hide()
+
+            self.delete_button.hide()
+
+            self.complete_button.hide()
+
+            self.reopen_button.hide()
+
     def update_dashboard(self):
-        
+
         period = self.dashboard.period
 
-        project_times = (
-            self.database.get_project_hours()
-        )
+        project_times = self.database.get_project_hours(period)
 
-        total_hours = (
-            self.database.get_total_hours()
-        )
-
-        # placeholder until we query database
-        for task in self.tasks:
-
-            project_times.setdefault(
-                task.project,
-                0
-            )
-
+        total_hours = self.database.get_total_hours(period)
 
         self.dashboard.update_dashboard(
             self.tasks,
             project_times,
             total_hours
         )
-
-    def update_timer(self):
-
-        self.elapsed_seconds += 1
-
-        hours = self.elapsed_seconds // 3600
-
-        minutes = (
-            self.elapsed_seconds % 3600
-        ) // 60
-
-        seconds = (
-            self.elapsed_seconds % 60
-        )
-
-
-        self.timer_label.setText(
-            f"{hours:02}:{minutes:02}:{seconds:02}"
-        )
-        
-    def stop_timer(self):
-
-        if self.timer_start is None:
-            return
-
-
-        self.timer.stop()
-
-
-        end = datetime.now()
-
-        duration = (
-            end - self.timer_start
-        ).total_seconds() / 3600
-
-
-        self.database.add_time_entry(
-            self.selected_task.id,
-            self.timer_start.isoformat(),
-            end.isoformat(),
-            duration
-        )
-
-
-        self.timer_start = None
-        
-    def start_timer(self):
-
-        print("Start clicked")
-
-        print(
-            "Selected task:",
-            self.selected_task
-        )
-
-        if self.selected_task is None:
-            return
-
-
-        self.timer_start = datetime.now()
-
-        self.elapsed_seconds = 0
-
-        self.timer.start(1000)
-
-    def load_mock_tasks(self):
-
-        self.tasks = [
-
-            Task(
-                title="Review ClearCase changes",
-                project="Radar",
-                due_date=date.today(),
-                impact=5,
-                blocking=True
-            ),
-
-            Task(
-                title="Fix build failure",
-                project="ARES",
-                due_date=date.today(),
-                impact=5
-            ),
-
-            Task(
-                title="Update requirements document",
-                project="Systems",
-                due_date=date.today()+timedelta(days=3),
-                impact=3
-            ),
-
-            Task(
-                title="Write documentation",
-                project="Docs",
-                due_date=date.today()+timedelta(days=10),
-                impact=1
-            ),
-        ]
-
-
-        self.tasks = sort_tasks(self.tasks)
-
-
-        self.table.setRowCount(len(self.tasks))
-
-        for row, task in enumerate(self.tasks):
-            values = [
-                task.priority_score(),
-                task.title,
-                task.due_date,
-                task.project,
-                task.status
-            ]
-
-
-            for col,value in enumerate(values):
-
-                self.table.setItem(
-                    row,
-                    col,
-                    QTableWidgetItem(str(value))
-                )
-
-    def delete_task(self):
-
-        if self.selected_task is None:
-            return
-
-
-        answer = QMessageBox.question(
-            self,
-            "Delete Task",
-            f"Delete '{self.selected_task.title}'?",
-            QMessageBox.StandardButton.Yes
-            | QMessageBox.StandardButton.No
-        )
-
-
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
-
-        self.database.delete_task(
-            self.selected_task.id
-        )
-
-
-        self.tasks.remove(
-            self.selected_task
-        )
-
-
-        self.selected_task = None
-
-
-        self.title.clear()
-        self.project.clear()
-        self.notes.clear()
-
-
-        self.refresh_table()
-        self.update_dashboard()
 
     def apply_theme(self):
 
@@ -674,78 +1039,6 @@ class TaskManager(QMainWindow):
             """
         )
 
-    def select_task(self, row, column):
-        
-        print("Clicked row:", row)
-        print("Task count:", len(self.tasks))
-        print("Table rows:", self.table.rowCount())
-
-        task = self.tasks[row]
-
-        self.selected_task = task
-
-
-        self.title.setText(
-            task.title
-        )
-
-        self.project.setText(
-            task.project
-        )
-
-        self.impact.setValue(
-            task.impact
-        )
-
-        self.effort.setValue(
-            task.effort
-        )
-
-        self.blocking.setChecked(
-            task.blocking
-        )
-
-        self.waiting.setChecked(
-            task.waiting
-        )
-
-        self.notes.setText(
-            task.notes
-        )
-        
-    def save_task(self):
-
-        if self.selected_task is None:
-            return
-
-        self.selected_task.title = self.title.text()
-
-        self.selected_task.project = self.project.text()
-
-        self.selected_task.impact = self.impact.value()
-
-        self.selected_task.effort = self.effort.value()
-
-        self.selected_task.blocking = (
-            self.blocking.isChecked()
-        )
-
-        self.selected_task.waiting = (
-            self.waiting.isChecked()
-        )
-
-        self.selected_task.notes = (
-            self.notes.toPlainText()
-        )
-        
-        self.database.update_task(
-                self.selected_task
-            )
-
-        # Recalculate priority and refresh table
-        self.refresh_table()
-        self.update_dashboard()
-        
     def refresh_table(self):
 
         self.tasks = sort_tasks(self.tasks)
@@ -753,10 +1046,10 @@ class TaskManager(QMainWindow):
         self.table.clearContents()
 
         self.table.setRowCount(
-            len(self.tasks)
+            len(self.filtered_tasks)
         )
 
-        for row, task in enumerate(self.tasks):
+        for row, task in enumerate(self.filtered_tasks):
 
             values = [
                 task.priority_score(),
@@ -778,6 +1071,33 @@ class TaskManager(QMainWindow):
                     row,
                     col,
                     item
+                )
+
+    def refresh_completed_table(self):
+
+        self.completed_table.clearContents()
+
+        self.completed_table.setRowCount(
+            len(self.completed_tasks)
+        )
+
+
+        for row, task in enumerate(
+            self.completed_tasks
+        ):
+
+            values = [
+                task.title,
+                task.project,
+                task.completed_date
+            ]
+
+            for col, value in enumerate(values):
+
+                self.completed_table.setItem(
+                    row,
+                    col,
+                    QTableWidgetItem(str(value))
                 )
 
 if __name__ == "__main__":

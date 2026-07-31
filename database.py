@@ -5,6 +5,7 @@ from datetime import date
 from datetime import datetime, timedelta
 
 
+
 DATABASE = "taskpilot.db"
 
 
@@ -233,16 +234,66 @@ class Database:
 
     #     return project_hours
 
-    def get_total_hours(self):
+
+    def get_total_hours(self, period="all"):
 
         cursor = self.connection.cursor()
 
-        cursor.execute(
-            """
-            SELECT SUM(duration)
-            FROM time_entries
-            """
-        )
+        if period == "today":
+
+            start = datetime.now().replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+        elif period == "week":
+
+            today = datetime.now()
+
+            start = (today - timedelta(days=today.weekday())).replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+        elif period == "month":
+
+            today = datetime.now()
+
+            start = today.replace(
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+        else:
+            start = None
+
+
+        if start is None:
+
+            cursor.execute(
+                """
+                SELECT SUM(duration)
+                FROM time_entries
+                """
+            )
+
+        else:
+
+            cursor.execute(
+                """
+                SELECT SUM(duration)
+                FROM time_entries
+                WHERE start_time >= ?
+                """,
+                (start.isoformat(),)
+            )
 
         result = cursor.fetchone()[0]
 
