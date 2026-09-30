@@ -70,7 +70,7 @@ class TaskManager(QMainWindow):
         
 
 
-        self.setWindowTitle("TaskPilot")
+        self.setWindowTitle("Tasker")
         self.resize(1400, 850)
 
         self.setup_ui()
@@ -153,6 +153,8 @@ class TaskManager(QMainWindow):
     def load_tasks(self):
 
         all_tasks = self.database.get_tasks()
+        
+        print('All Tasks:', all_tasks)
 
         self.tasks = [
             t for t in all_tasks
@@ -166,6 +168,8 @@ class TaskManager(QMainWindow):
 
 
         # Important for filters
+        
+        self.tasks = sort_tasks(self.tasks)
         self.filtered_tasks = self.tasks.copy()
 
 
@@ -518,6 +522,11 @@ class TaskManager(QMainWindow):
                 t for t in self.tasks
                 if t.waiting
             ]
+    
+        elif filter_name == "backlog":
+
+            self.filtered_tasks = self.tasks
+
 
         elif filter_name == "completed":
 
