@@ -1,14 +1,14 @@
 ## Build Environment
 ```bash
-python -m venv taskpilot_env
+python -m venv tasker_env
 ```
 
 # Windows
 ```bash
-taskpilot_env\Scripts\activate
+tasker_env\Scripts\activate
 ```
 
 # Linux/macOS
 ```bash
-source taskpilot_env/bin/activate
+source tasker_env/bin/activate
 ```

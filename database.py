@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 
 
-DATABASE = "taskpilot.db"
+DATABASE = "tasker.db"
 
 
 class Database:
